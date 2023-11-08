@@ -23,9 +23,11 @@ const U64 not_H_file = 9187201950435737471;
 const U64 not_GH_file = 4557430888798830399;
 const U64 not_AB_file = 18229723555195321596;
 
-// Pawn Tables
+// Attack Maps
 
 U64 pawn_attacks[2][64];
+U64 knight_attacks[64];
+U64 king_attacks[64];
 
 void print_board(U64 bb) {
     // Loop over ranks (rows)
@@ -44,11 +46,13 @@ void print_board(U64 bb) {
     printf("\n %llu\n", bb);
 }
 
+/* ********* LEAPER (UNBLOCKABLE) PIECE ATTACKS ********* */
+
+/* Initialize Attack Map for Square */
 U64 mask_pawn_attacks(int side, int square) {
     U64 attacks = 0ULL; // Bitboard containing all attacks by pawn
     U64 bitboard = 0ULL; // Bitboard of piece
     set_bit(bitboard, square);
-    print_board(bitboard);
     // White
     if (side == 0) { 
         if ((bitboard) & not_H_file) attacks |= (bitboard >> 7); // Attack up + right IF ALLOWED.
@@ -60,17 +64,121 @@ U64 mask_pawn_attacks(int side, int square) {
     return attacks;
 }
 
-// Initialize pawn and knight attack maps.
+U64 mask_knight_attacks(int square) {
+    U64 attacks = 0ULL;
+    U64 bitboard = 0ULL;
+    set_bit(bitboard, square);
+    if ((bitboard) & not_A_file) {
+        attacks |= (bitboard >> 17); // Attack up 2, left 1
+        attacks |= (bitboard << 15); // Attack down 2, left 1
+    }  // Attack up 2, left 1
+    if ((bitboard) & not_H_file) {
+        attacks |= (bitboard >> 15); // Attack up 2, right 1
+        attacks |= (bitboard << 17); // Attack down 2, right 1
+    } // Attack up 2, right 1
+    if ((bitboard) & not_AB_file) {
+        attacks |= (bitboard >> 10); // Attack up 1, left 2
+        attacks |= (bitboard << 6); // Attack down 1, left 2
+    }
+    if ((bitboard) & not_GH_file) {
+        attacks |= (bitboard >> 6); // Attack up 1, right 2
+        attacks |= (bitboard << 10); // Attack down 1, right 2
+    }
+    
+    return attacks;
+}
+
+U64 mask_king_attacks(int square) {
+    U64 attacks = 0ULL;
+    U64 bitboard = 0ULL;
+    set_bit(bitboard, square);
+    attacks |= (bitboard << 8);
+    attacks |= (bitboard >> 8);
+    if (bitboard & not_A_file) {
+        attacks |= (bitboard >> 9);
+        attacks |= (bitboard >> 1);
+        attacks |= (bitboard << 7);
+    }
+    if (bitboard & not_H_file) {
+        attacks |= (bitboard << 9);
+        attacks |= (bitboard << 1);
+        attacks |= (bitboard >> 7);
+    }
+    return attacks;
+}
+
+// Initialize pawn, knight, and king attack maps.
 void initialize_leaper_attacks() {
     for (int square = 0; square < 64; square++) {
         pawn_attacks[WHITE][square] = mask_pawn_attacks(WHITE, square);
         pawn_attacks[BLACK][square] = mask_pawn_attacks(BLACK, square);
+        knight_attacks[square] = mask_knight_attacks(square);
+        king_attacks[square] = mask_king_attacks(square);
     }
+}
+
+/* ********* SLIDING PIECE ATTACKS ********** */
+
+/* Why don't we take the edge of the board? Well, OCCUPANCY bits are bits in which another piece could BLOCK
+ A BISHOP or ROOK which will AFFECT the attack squares of the sliding pieces. Since a piece on the edge of the board
+ does not impact any squares (as there are none behind them) we ignore them in this computation. */
+
+U64 mask_bishop_occupancies(int square) {
+    // This is a helper function used to generate sliding piece attacks. These do not actually 
+    // generate attacks, but the result is used in an algorithm known as "magic bitboards" that will
+    // actually help generate the attacks.
+    U64 attacks = 0ULL;
+    int r, f;
+    int target_rank = square/8;
+    int target_file = square%8;
+
+    // Mask bishop occupancy bits
+    for (r = target_rank+1, f = target_file+1; r <= 6 && f <= 6; r++, f++) {
+        set_bit(attacks, (8*r + f));
+    }
+    for (r = target_rank-1, f = target_file+1; r >= 1 && f <= 6; r--, f++) {
+        set_bit(attacks, (8*r + f));
+    }
+    for (r = target_rank+1, f = target_file-1; r <= 6 && f >= 1; r++, f--) {
+        set_bit(attacks, (8*r + f));
+    }
+    for (r = target_rank-1, f = target_file-1; r >= 1 && f >= 1; r--, f--) {
+        set_bit(attacks, (8*r + f));
+    }
+    return attacks;
+}
+U64 mask_rook_occupancies(int square) {
+    // This is a helper function used to generate sliding piece attacks. These do not actually 
+    // generate attacks, but the result is used in an algorithm known as "magic bitboards" that will
+    // actually help generate the attacks.
+    U64 attacks = 0ULL;
+    int r, f;
+    int target_rank = square/8;
+    int target_file = square%8;
+
+    // Mask rook occupancy bits
+    for (r = target_rank+1; r <= 6; r++) {
+        set_bit(attacks, (8*r + target_file));
+    }
+    for (r = target_rank-1; r >= 1; r--) {
+        set_bit(attacks, (8*r + target_file));
+    }
+    for (f = target_file-1; f >= 1; f--) {
+        set_bit(attacks, (8*target_rank + f));
+    }
+    for (f = target_file+1; f <= 6; f++) {
+        set_bit(attacks, (8*target_rank + f));
+    }
+    return attacks;
 }
 
 int main() {
 
     initialize_leaper_attacks();
-    print_board(pawn_attacks[WHITE][h1]);
+    // print_board(pawn_attacks[WHITE][h1]);
+    // print_board(mask_rook_occupancies(a3));
+    for (int i = 0; i < 64; i++) {
+        print_board(mask_rook_occupancies(i));
+    }
     return 0;
 }
