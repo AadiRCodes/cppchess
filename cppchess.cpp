@@ -3,6 +3,10 @@
 #define get_bit(bb, square) (bb & (1ULL << square))
 #define set_bit(bb, square) (bb |= (1ULL << square))
 #define remove_bit(bb, square) (bb &= ~(1ULL << square))
+#define count_bits(bb) __builtin_popcountll(bb)
+#define first_bit(bb) __builtin_ffsll(bb)-1
+
+
 
 // Square Constants
 enum {
@@ -118,15 +122,34 @@ void initialize_leaper_attacks() {
 }
 
 /* ********* SLIDING PIECE ATTACKS ********** */
+// A precalculated table of the number of bits in the occupancy mask of a bishop on each square.
+const int bishop_occupancy_bit_count[64] = {
+    6, 5, 5, 5, 5, 5, 5, 6,
+    5, 5, 5, 5, 5, 5, 5, 5,
+    5, 5, 7, 7, 7, 7, 5, 5,
+    5, 5, 7, 9, 9, 7, 5, 5,
+    5, 5, 7, 9, 9, 7, 5, 5,
+    5, 5, 7, 7, 7, 7, 5, 5,
+    5, 5, 5, 5, 5, 5, 5, 5,
+    6, 5, 5, 5, 5, 5, 5, 6
+};
+const int rook_occupancy_bit_count[64] = {
+    12, 11, 11, 11, 11, 11, 11, 12,
+    11, 10, 10, 10, 10, 10, 10, 11,
+    11, 10, 10, 10, 10, 10, 10, 11,
+    11, 10, 10, 10, 10, 10, 10, 11,
+    11, 10, 10, 10, 10, 10, 10, 11,
+    11, 10, 10, 10, 10, 10, 10, 11,
+    11, 10, 10, 10, 10, 10, 10, 11,
+    12, 11, 11, 11, 11, 11, 11, 12
+ };
 
 /* Why don't we take the edge of the board? Well, OCCUPANCY bits are bits in which another piece could BLOCK
  A BISHOP or ROOK which will AFFECT the attack squares of the sliding pieces. Since a piece on the edge of the board
  does not impact any squares (as there are none behind them) we ignore them in this computation. */
 
 U64 mask_bishop_occupancies(int square) {
-    // This is a helper function used to generate sliding piece attacks. These do not actually 
-    // generate attacks, but the result is used in an algorithm known as "magic bitboards" that will
-    // actually help generate the attacks.
+    // Returns a mask with a 1 in every square that can affect the bishop's attack range, known as its occupancy mask.
     U64 attacks = 0ULL;
     int r, f;
     int target_rank = square/8;
@@ -148,9 +171,10 @@ U64 mask_bishop_occupancies(int square) {
     return attacks;
 }
 U64 mask_rook_occupancies(int square) {
-    // This is a helper function used to generate sliding piece attacks. These do not actually 
-    // generate attacks, but the result is used in an algorithm known as "magic bitboards" that will
-    // actually help generate the attacks.
+// Returns a mask with a 1 in every square that can affect the bishop's attack range, known as its occupancy mask.
+
+    // INPUT: Square of piece
+
     U64 attacks = 0ULL;
     int r, f;
     int target_rank = square/8;
@@ -172,13 +196,109 @@ U64 mask_rook_occupancies(int square) {
     return attacks;
 }
 
+U64 bishop_attacks_imm(int square, U64 blocked) {
+    // This is a helper function used to generate sliding piece attacks. These do not actually 
+    // generate attacks, but the result is used in an algorithm known as "magic bitboards" that will
+    // actually help generate the attacks.
+    // INPUT: square of bishop, bitboard of all blocking pieces
+    U64 attacks = 0ULL;
+    int r, f;
+    int target_rank = square/8;
+    int target_file = square%8;
+
+    // Mask bishop occupancy bits
+    for (r = target_rank+1, f = target_file+1; r <= 7 && f <= 7; r++, f++) {
+        set_bit(attacks, (8*r + f));
+        if (get_bit(blocked, (8*r+f))) {
+            break;
+        }
+    }
+    for (r = target_rank-1, f = target_file+1; r >= 0 && f <= 7; r--, f++) {
+        set_bit(attacks, (8*r + f));
+        if (get_bit(blocked, (8*r+f))) {
+            break;
+        }
+    }
+    for (r = target_rank+1, f = target_file-1; r <= 7 && f >= 0; r++, f--) {
+        set_bit(attacks, (8*r + f));
+        if (get_bit(blocked, (8*r+f))) {
+            break;
+        }
+    }
+    for (r = target_rank-1, f = target_file-1; r >= 0 && f >= 0; r--, f--) {
+        set_bit(attacks, (8*r + f));
+        if (get_bit(blocked, (8*r+f))) {
+            break;
+        }
+    }
+    return attacks;
+}
+
+U64 rook_attacks_imm(int square, U64 blocked) {
+    // This is a helper function used to generate sliding piece attacks. These do not actually 
+    // generate attacks, but the result is used in an algorithm known as "magic bitboards" that will
+    // actually help generate the attacks.
+
+    // INPUT: Square of piece, bitboard of blocking pieces
+
+    U64 attacks = 0ULL;
+    int r, f;
+    int target_rank = square/8;
+    int target_file = square%8;
+
+    // Mask rook occupancy bits
+    for (r = target_rank+1; r <= 7; r++) {
+        set_bit(attacks, (8*r + target_file));
+        if (get_bit(blocked, (8*r+target_file))) {
+            break;
+        }
+    }
+    for (r = target_rank-1; r >= 0; r--) {
+        set_bit(attacks, (8*r + target_file));
+        if (get_bit(blocked, (8*r+target_file))) {
+            break;
+        }
+    }
+    for (f = target_file-1; f >= 0; f--) {
+        set_bit(attacks, (8*target_rank + f));
+        if (get_bit(blocked, (8*target_rank+f))) {
+            break;
+        }
+    }
+    for (f = target_file+1; f <= 7; f++) {
+        set_bit(attacks, (8*target_rank + f));
+        if (get_bit(blocked, (8*target_rank+f))) {
+            break;
+        }
+    }
+    return attacks;
+}
+
+// set occupancies
+
+U64 set_occupancies(int index, int bits_in_mask, U64 attack_mask) {
+    /* Every index can be signifed*/
+    U64 occupancy = 0ULL;
+    for (int i = 0; i < bits_in_mask; i++) {
+        int square = first_bit(attack_mask);
+        remove_bit(attack_mask, square);
+        if (index & (1 << i)) {
+            set_bit(occupancy, square);
+        }
+    }
+    return occupancy;
+}
 int main() {
 
     initialize_leaper_attacks();
     // print_board(pawn_attacks[WHITE][h1]);
     // print_board(mask_rook_occupancies(a3));
-    for (int i = 0; i < 64; i++) {
-        print_board(mask_rook_occupancies(i));
+    for (int r = 0; r < 8; r++) {
+        for (int f = 0; f < 8; f++) {
+            int square = 8*r+f;
+            printf(" %d,", count_bits(mask_rook_occupancies(square)));
+        }
+        printf("\n");
     }
     return 0;
 }
