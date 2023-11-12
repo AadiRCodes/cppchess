@@ -2,9 +2,9 @@
 #include <string.h>
 #include "magics.h"
 typedef unsigned long long U64;
-#define get_bit(bb, square) (bb & (1ULL << square))
-#define set_bit(bb, square) (bb |= (1ULL << square))
-#define remove_bit(bb, square) (bb &= ~(1ULL << square))
+#define get_bit(bb, square) ((bb) & (1ULL << square))
+#define set_bit(bb, square) ((bb) |= (1ULL << square))
+#define remove_bit(bb, square) ((bb) &= ~(1ULL << square))
 #define count_bits(bb) __builtin_popcountll(bb)
 #define first_bit(bb) __builtin_ffsll(bb)-1
 
@@ -19,11 +19,38 @@ enum {
     a4, b4, c4, d4, e4, f4, g4, h4, 
     a3, b3, c3, d3, e3, f3, g3, h3, 
     a2, b2, c2, d2, e2, f2, g2, h2,
-    a1, b1, c1, d1, e1, f1, g1, h1
+    a1, b1, c1, d1, e1, f1, g1, h1, no_sq
 };
-
-enum {WHITE, BLACK};
+// Colors and Piecs
+enum {WHITE, BLACK, BOTH};
 enum {ROOK, BISHOP};
+
+U64 piece_bitboards[12]; // One bitboard for each piece on white and black (12 total)
+U64 occupancy_bitboards[3]; // Bitboards describing occupancies (positions of pieces of each color, and of both colors, total 3)
+int side = -1;
+int enpassant = no_sq;
+int castle;
+// Castling rights (Represented by four bits, each bit represents color/queen+kingside castling)
+enum {WK = 1, WQ = 2, BK = 4, BQ = 8};
+// Encode pieces
+enum {P, N, B, R, Q, K, p, n, b, r, q, k};
+char asciipieces[13] = "PNBRQKpnbrqk";
+const char *piece_symbols[12] = {"♙", "♘", "♗", "♖", "♕", "♔", "♟︎", "♞", "♝", "♜", "♛", "♚"};
+int char_to_number[] = {
+    ['P'] = P,
+    ['N'] = N,
+    ['B'] = B,
+    ['R'] = R,
+    ['Q'] = Q,
+    ['K'] = K,
+    ['p'] = p,
+    ['n'] = n,
+    ['b'] = b,
+    ['r'] = r,
+    ['q'] = q,
+    ['k'] = k
+
+};
 // Masks of all squares not on the a-file or h-file, not a or b-file, and not g or h-files. Latter for knights.
 const U64 not_A_file = 18374403900871474942;
 const U64 not_H_file = 9187201950435737471;
@@ -211,6 +238,32 @@ void print_board(U64 bb) {
     }
     printf("     a  b  c  d  e  f  g  h \n");
     printf("\n %llu\n", bb);
+}
+
+void print_game_state() {
+    printf("\n");
+    for (int r = 0; r < 8; r++) {
+        for (int f = 0; f < 8; f++) {
+            int sq = 8*r+f;
+            if (f == 0) {
+                printf(" %d  ", 8-r); // print ranks
+            }
+            int piece = -1;
+            for (int p = 0; p < 11; p++) {
+                if (get_bit(piece_bitboards[p], sq)) {
+                    piece = p;
+                }
+            }
+            printf(" %c", (piece == -1) ? '.' : asciipieces[piece]);
+        }
+        printf("\n");
+    }
+    printf("     a b c d e f g h \n");
+    printf("\n Side:    %s", !side ? "White" : "Black");
+    printf("\n Castling rights:   %c%c%c%c", (castle & WK) ? 'K' : '-', 
+                                            (castle & WQ) ? 'Q' : '-',
+                                            (castle & BK) ? 'k' : '-',
+                                            (castle & BQ) ? 'q' : '-');
 }
 
 /* ********* LEAPER (UNBLOCKABLE) PIECE ATTACKS ********* */
@@ -515,6 +568,7 @@ U64 get_rook_attacks(int square, U64 occupancy) {
 }
 
 
+
 /* ********** INIT ALL ********** */
 
 void init_all() {
@@ -529,9 +583,10 @@ void init_all() {
 int main() {
 
     init_all();
-    U64 occupancy = 0x1a2208080504f080ULL;
-    print_board(occupancy);
-    print_board(get_bishop_attacks(d4, occupancy));
-    print_board(get_rook_attacks(e4, occupancy));
+    set_bit(piece_bitboards[P], e4);
+    side = 0;
+    castle = 15;
+    print_board(piece_bitboards[P]);
+    print_game_state();
     return 0;
 }
